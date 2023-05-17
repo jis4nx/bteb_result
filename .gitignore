@@ -1,7 +1,7 @@
 #USER
 
-txt/*
-filtered/*
+/txt/*
+/filtered/*
 
 
 # Byte-compiled / optimized / DLL files
