@@ -1,4 +1,3 @@
-from enum import EnumCheck
 from pprint import pprint
 import re
 import PyPDF2
