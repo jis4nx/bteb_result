@@ -1,3 +1,4 @@
+from enum import EnumCheck
 from pprint import pprint
 import re
 import PyPDF2
@@ -9,11 +10,21 @@ from concurrent.futures import ThreadPoolExecutor
 class ResultScraper:
 
     def __init__(self):
-        self.client = pymongo.MongoClient("localhost", 27017)
-        self.db = self.client['bteb_result']
         self.PATTERN = re.compile(r'\d{6}\s\{(.*?)\}|\d{6}\s\(.*?\)')
         self.NAME_PATTERN = r"\(Md\.KapayetUllah\)"
         self.DATE_PATTERN = r'Date\s.+(\d{2}-(\d{2})-(\d{4}))'
+        self.db_name = "bteb_result"
+
+    def __enter__(self):
+        try:
+            self.client = pymongo.MongoClient("localhost", 27017, serverselectiontimeoutms=10000)
+            self.db = self.client[self.db_name]
+        except Exception as e:
+            print("Failed to connect to MongoDB")
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.client.close()
 
     def convert_pdf_to_text(self, pdf_list):
         def extract_text(pdf):
@@ -67,12 +78,14 @@ class ResultScraper:
                     }
 
                     self.RESULT_LIST.append(data)
-
-        collection.insert_many(self.RESULT_LIST)
+        try:
+            collection.insert_many(self.RESULT_LIST)
+        except Exception as e:
+            print(e)
         print(f"[+]Done  {self.db.name} -> {collection.name}")
 
 
-pdf_converter = ResultScraper()
-# pdf_converter.convert_pdf_to_text(os.listdir('pdf'))
-# pdf_converter.sanitize_text_files(os.listdir('txt'))
-pdf_converter.get_result('./filtered/7th_Sem_2016_Regulation.filtered.txt')
+with ResultScraper() as rs:
+    # rs.convert_pdf_to_text(os.listdir('pdf'))
+    # rs_converter.sanitize_text_files(os.listdir('txt'))
+    rs.get_result('./filtered/7th_Sem_2016_Regulation.filtered.txt')
