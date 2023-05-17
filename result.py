@@ -96,6 +96,6 @@ with ResultScraper() as rs:
     for file in os.scandir('filtered'):
         rs.get_result(os.path.join('filtered', file.name))
 
-    for dir_path in dir_paths:
-        for file in os.scandir(dir_path):
-            os.remove(os.path.join(dir_path, file.name))
+for dir_path in dir_paths:
+    for file in os.scandir(dir_path):
+        os.remove(os.path.join(dir_path, file.name))
