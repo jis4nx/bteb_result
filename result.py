@@ -13,6 +13,7 @@ class ResultScraper:
         self.PATTERN = re.compile(r'\d{6}\s\{(.*?)\}|\d{6}\s\(.*?\)')
         self.NAME_PATTERN = r"\(Md\.KapayetUllah\)"
         self.DATE_PATTERN = r'Date\s.+(\d{2}-(\d{2})-(\d{4}))'
+        self.SEM_PATTERN = r'(\d\w{2})\s\Semester'
         self.db_name = "bteb_result"
 
     def __enter__(self):
@@ -49,6 +50,16 @@ class ResultScraper:
             with open(f'filtered/{name}.filtered.txt', 'w') as filtered:
                 filtered.write(all_the_data)
 
+    def insert_data(self, data):
+        try:
+            collection_name = f'res_{data["year"]}'
+            collection = self.db[collection_name]
+            collection.create_index('roll', unique=True)
+            collection.insert_one(data)
+            print(f"[+]Done  {self.db.name} -> {collection.name}")
+        except DuplicateKeyError as e:
+            print("Error: Duplicate key")
+
     def get_result(self, txt):
 
         with open(txt, 'r') as txt:
@@ -58,7 +69,8 @@ class ResultScraper:
             collection_name = f'res_{year}'
             collection = self.db[collection_name]
             collection.create_index('roll', unique=True)
-            semester = (txt.name).split('/')[-1].split('_')[0][0]
+            semester = re.search(self.SEM_PATTERN, text).group(
+                0).split(' ')[0][0]
 
             self.RESULT_LIST = []
             for match in matches:
@@ -78,21 +90,17 @@ class ResultScraper:
                         "roll": roll,
                         "result": final_result,
                     }
-
                     self.RESULT_LIST.append(data)
-            try:
-                collection.create_index('roll', unique=True)
-                collection.insert_many(self.RESULT_LIST, ordered=False)
-            except (DuplicateKeyError) as e:
-                print("H")
-            print(f"[+]Done  {self.db.name} -> {collection.name}")
+
+            with ThreadPoolExecutor() as executor:
+                executor.map(self.insert_data, self.RESULT_LIST)
 
 
 dir_paths = ['txt', 'filtered']
 
 with ResultScraper() as rs:
-    rs.convert_pdf_to_text(os.listdir('pdf'))
-    rs.sanitize_text_files(os.listdir('txt'))
+    # rs.convert_pdf_to_text(os.listdir('pdf')[:3])
+    # rs.sanitize_text_files(os.listdir('txt'))
     for file in os.scandir('filtered'):
         rs.get_result(os.path.join('filtered', file.name))
 
