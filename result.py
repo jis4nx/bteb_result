@@ -2,21 +2,32 @@ import re
 import PyPDF2
 import os
 import pymongo
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError
 from concurrent.futures import ThreadPoolExecutor
 import shutil
+import time
 
 
 class ResultScraper:
 
-    def __init__(self):
+    def __init__(self, create_dir=False):
         self.PATTERN = re.compile(r'\d{6}\s\{(.*?)\}|\d{6}\s\(.*?\)')
         self.NAME_PATTERN = r"\(Md\.KapayetUllah\)"
         self.DATE_PATTERN = r'Date\s.+(\d{2}-(\d{2})-(\d{4}))'
         self.SEM_PATTERN = r'(\d\w{2})\s\Semester'
         self.db_name = "bteb_result"
+        self.dir_paths = ['txt', 'filtered']
+        self.create_dir = create_dir
 
     def __enter__(self):
+        if self.create_dir:
+            for dir in self.dir_paths:
+                try:
+                    os.mkdir(dir)
+                except FileExistsError:
+                    pass
+        else:
+            pass
         try:
             self.client = pymongo.MongoClient(
                 "localhost", 27017, serverselectiontimeoutms=10000)
@@ -26,6 +37,11 @@ class ResultScraper:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
+        if self.create_dir:
+            for dir in self.dir_paths:
+                shutil.rmtree(dir)
+        else:
+            pass
         self.client.close()
 
     def convert_pdf_to_text(self, pdf_list):
@@ -50,16 +66,6 @@ class ResultScraper:
             with open(f'filtered/{name}.filtered.txt', 'w') as filtered:
                 filtered.write(all_the_data)
 
-    def insert_data(self, data):
-        try:
-            collection_name = f'res_{data["year"]}'
-            collection = self.db[collection_name]
-            collection.create_index('roll', unique=True)
-            collection.insert_one(data)
-            print(f"[+]Done  {self.db.name} -> {collection.name}")
-        except DuplicateKeyError as e:
-            print("Error: Duplicate key")
-
     def get_result(self, txt):
 
         with open(txt, 'r') as txt:
@@ -68,7 +74,6 @@ class ResultScraper:
             year = re.search(self.DATE_PATTERN, text).group(3)
             collection_name = f'res_{year}'
             collection = self.db[collection_name]
-            collection.create_index('roll', unique=True)
             semester = re.search(self.SEM_PATTERN, text).group(
                 0).split(' ')[0][0]
 
@@ -91,19 +96,22 @@ class ResultScraper:
                         "result": final_result,
                     }
                     self.RESULT_LIST.append(data)
+            try:
+                collection.create_index('roll', unique=True)
+                collection.insert_many(self.RESULT_LIST, ordered=False)
+                print(f"[+]Done  {self.db.name} -> {collection.name}")
+            except BulkWriteError as e:
+                for error in e.details['writeErrors']:
+                    if error['code'] == 11000:
+                        print("Found Duplicate, Skipping...")
 
-            with ThreadPoolExecutor() as executor:
-                executor.map(self.insert_data, self.RESULT_LIST)
 
+t1 = time.perf_counter()
+with ResultScraper(create_dir=True) as rs:
+    rs.convert_pdf_to_text(os.listdir('pdf')[:3])
+    rs.sanitize_text_files(os.listdir('txt'))
 
-dir_paths = ['txt', 'filtered']
-
-with ResultScraper() as rs:
-    # rs.convert_pdf_to_text(os.listdir('pdf')[:3])
-    # rs.sanitize_text_files(os.listdir('txt'))
     for file in os.scandir('filtered'):
         rs.get_result(os.path.join('filtered', file.name))
-
-for dir_path in dir_paths:
-    for file in os.scandir(dir_path):
-        os.remove(os.path.join(dir_path, file.name))
+t2 = time.perf_counter()-t1
+print(t2)
