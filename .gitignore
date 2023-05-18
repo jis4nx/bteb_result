@@ -3,8 +3,8 @@
 txt/*
 filtered/*
 
-!txt/.gitkeep
-!filtered/.gitkeep
+!txt/
+!filtered/
 
 
 # Byte-compiled / optimized / DLL files
